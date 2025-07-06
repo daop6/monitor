@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <title>Monitoring KA DAOP 6</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body, html {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: #f0f4f8;
+      color: #333;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transition: background-color 0.3s, color 0.3s;
+    }
+
+    h1 {
+      margin-top: 20px;
+      font-size: 40px;
+      color: #007bff;
+    }
+
+    #waktu-container {
+      display: flex;
+      flex-direction: row;
+      justify-content: center;
+      align-items: baseline;
+      gap: 30px;
+      margin: 10px 0 30px 0;
+      flex-wrap: wrap;
+    }
+
+    #tanggal-sekarang,
+    #jam-sekarang {
+      font-size: 40px;
+      font-weight: bold;
+    }
+
+    #container-pemberitahuan {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 40px;
+    }
+
+    .notifikasi {
+      display: flex;
+      flex-direction: column;
+      text-align: center;
+      align-items: center;
+      padding: 12px 20px;
+      border-left: 10px solid;
+      border-radius: 10px;
+      font-size: 40px;
+      font-weight: 500;
+      background-color: #fff;
+      white-space: normal;
+      max-width: 90vw;
+      opacity: 0;
+      visibility: hidden;
+    }
+
+    .datang {
+      border-left-color: #dc3545;
+      background-color: #fdeaea;
+    }
+
+    .berangkat {
+      border-left-color: #28a745;
+      background-color: #e7f9ee;
+    }
+
+    .langsung {
+      border-left-color: #007bff;
+      background-color: #e6f0ff;
+    }
+
+    .keterangan {
+      font-size: 40px;
+      font-weight: 400;
+      color: #555;
+      margin-top: 4px;
+    }
+
+    @keyframes slideInUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to   { opacity: 1; transform: translateY(0); visibility: visible; }
+    }
+
+    @keyframes slideOutDown {
+      from { opacity: 1; transform: translateY(0); visibility: visible; }
+      to   { opacity: 0; transform: translateY(30px); visibility: hidden; }
+    }
+
+    .fade-in { animation: slideInUp 0.6s ease forwards; }
+    .fade-out { animation: slideOutDown 0.6s ease forwards; }
+
+    @media (max-width: 600px) {
+      .notifikasi { font-size: 16px; padding: 12px 16px; }
+      .keterangan { font-size: 14px; }
+    }
+
+    @media (prefers-color-scheme: dark) {
+      body, html {
+        background: #000;
+        color: #fff;
+      }
+      h1 { color: #4dabff; }
+      .datang { border-left-color: #ff6b6b; background-color: #3a1e1e; }
+      .berangkat { border-left-color: #4cd964; background-color: #1e3a2a; }
+      .langsung { border-left-color: #0a84ff; background-color: #1e2e3a; }
+      .keterangan { color: #ccc; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Monitoring KA DAOP 6 Kutoarjo - Solo</h1>
+  <div id="waktu-container">
+    <div id="tanggal-sekarang">-- -- ----</div>
+    <div id="jam-sekarang">--:--:--</div>
+  </div>
+  <div id="container-pemberitahuan"></div>
+  <script>
+    const container = document.getElementById("container-pemberitahuan");
+    const jamDisplay = document.getElementById("jam-sekarang");
+    const tanggalDisplay = document.getElementById("tanggal-sekarang");
+    const sudahTampil = new Set();
+    let semuaData = {};
+    let batchTertunda = [];
+    let sedangMenampilkan = false;
+    let tanggalTerakhir = "";
+
+    function pad(n) {
+      return n.toString().padStart(2, '0');
+    }
+
+    function tampilkanJam() {
+      const now = new Date();
+      jamDisplay.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+      const tanggalSekarang = now.toLocaleDateString('id-ID', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      });
+
+      if (tanggalSekarang !== tanggalTerakhir) {
+        tanggalTerakhir = tanggalSekarang;
+        tanggalDisplay.textContent = tanggalTerakhir;
+      }
+    }
+
+    function ambilNamaKereta(item) {
+      return item.ka || item.plb || item.klb || "??";
+    }
+
+    function ambilLabelJenis(item) {
+      if (item.plb) return "PLB";
+      if (item.klb) return "KLB";
+      return "KA";
+    }
+
+    function tampilkanBatch(batch) {
+      sedangMenampilkan = true;
+      const now = new Date();
+      const detikSekarang = now.getSeconds();
+      const tungguSampai59 = (59 - detikSekarang) * 1000;
+
+      const urutan = { datang: 1, langsung: 2, berangkat: 3 };
+      batch.sort((a, b) => urutan[a.tipe] - urutan[b.tipe]);
+
+      batch.forEach(({ pesan, tipe, keterangan }) => {
+        const div = document.createElement("div");
+        div.className = `notifikasi ${tipe}`;
+
+        const isiPesan = document.createElement("div");
+        isiPesan.innerHTML = pesan;
+        div.appendChild(isiPesan);
+
+        if (keterangan.trim()) {
+          const ket = document.createElement("div");
+          ket.className = "keterangan";
+          ket.textContent = keterangan;
+          div.appendChild(ket);
+        }
+
+        container.appendChild(div);
+        setTimeout(() => div.classList.add("fade-in"), 10);
+
+        setTimeout(() => {
+          div.classList.remove("fade-in");
+          div.classList.add("fade-out");
+        }, tungguSampai59);
+
+        setTimeout(() => {
+          if (div.parentNode) container.removeChild(div);
+          if (container.children.length === 0 && batchTertunda.length > 0) {
+            tampilkanBatch(batchTertunda.shift());
+          } else if (container.children.length === 0) {
+            sedangMenampilkan = false;
+          }
+        }, tungguSampai59 + 800);
+      });
+    }
+
+    function prosesNotifikasiSaatIni() {
+      const now = new Date();
+      const jam = now.getHours();
+      const menit = now.getMinutes();
+      const detik = now.getSeconds();
+      if (detik !== 0) return;
+
+      const batch = [];
+
+      for (const [stasiun, jadwalList] of Object.entries(semuaData)) {
+        jadwalList.forEach(item => {
+          const namaKereta = ambilNamaKereta(item);
+          const label = ambilLabelJenis(item);
+          const datangLangsung = item.datang === "0";
+          const datangValid = item.datang !== "-" && item.datang !== "0";
+          const berangkatValid = item.berangkat !== "-";
+
+          const [jamD, menitD] = datangValid ? item.datang.split(/[:.]/).map(Number) : [null, null];
+          const [jamB, menitB] = berangkatValid ? item.berangkat.split(/[:.]/).map(Number) : [null, null];
+
+          const kunciDatang = `${stasiun}-${namaKereta}-datang`;
+          const kunciBerangkat = `${stasiun}-${namaKereta}-berangkat`;
+          const kunciLangsung = `${stasiun}-${namaKereta}-langsung`;
+
+          if (datangValid && jam === jamD && menit === menitD && !sudahTampil.has(kunciDatang)) {
+            sudahTampil.add(kunciDatang);
+            batch.push({
+              pesan: `⬇️ ${stasiun} ${label} ${namaKereta} <i>datang</i> ${item.datang}`,
+              tipe: "datang",
+              keterangan: item.keterangan || ""
+            });
+          }
+
+          if (datangLangsung && berangkatValid && jam === jamB && menit === menitB && !sudahTampil.has(kunciLangsung)) {
+            sudahTampil.add(kunciLangsung);
+            batch.push({
+              pesan: `➡️ ${stasiun} ${label} ${namaKereta} <i>langsung</i> ${item.berangkat}`,
+              tipe: "langsung",
+              keterangan: item.keterangan || ""
+            });
+          }
+
+          if (!datangLangsung && berangkatValid && jam === jamB && menit === menitB && !sudahTampil.has(kunciBerangkat)) {
+            sudahTampil.add(kunciBerangkat);
+            batch.push({
+              pesan: `⬆️ ${stasiun} ${label} ${namaKereta} <i>berangkat</i> ${item.berangkat}`,
+              tipe: "berangkat",
+              keterangan: item.keterangan || ""
+            });
+          }
+        });
+      }
+
+      if (batch.length > 0) {
+        if (!sedangMenampilkan && container.children.length === 0) {
+          tampilkanBatch(batch);
+        } else {
+          batchTertunda.push(batch);
+        }
+      }
+    }
+
+    function periksaNotifikasiSegeraSaatMuat() {
+      const now = new Date();
+      const jam = now.getHours();
+      const menit = now.getMinutes();
+      const detik = now.getSeconds();
+      const batch = [];
+
+      for (const [stasiun, jadwalList] of Object.entries(semuaData)) {
+        jadwalList.forEach(item => {
+          const namaKereta = ambilNamaKereta(item);
+          const label = ambilLabelJenis(item);
+          const datangLangsung = item.datang === "0";
+          const datangValid = item.datang !== "-" && item.datang !== "0";
+          const berangkatValid = item.berangkat !== "-";
+
+          const [jamD, menitD] = datangValid ? item.datang.split(/[:.]/).map(Number) : [null, null];
+          const [jamB, menitB] = berangkatValid ? item.berangkat.split(/[:.]/).map(Number) : [null, null];
+
+          const kunciDatang = `${stasiun}-${namaKereta}-datang`;
+          const kunciBerangkat = `${stasiun}-${namaKereta}-berangkat`;
+          const kunciLangsung = `${stasiun}-${namaKereta}-langsung`;
+
+          if (datangValid && jam === jamD && menit === menitD && detik < 59 && !sudahTampil.has(kunciDatang)) {
+            sudahTampil.add(kunciDatang);
+            batch.push({
+              pesan: `⬇️ ${stasiun} ${label} ${namaKereta} <i>datang</i> ${item.datang}`,
+              tipe: "datang",
+              keterangan: item.keterangan || ""
+            });
+          }
+
+          if (datangLangsung && berangkatValid && jam === jamB && menit === menitB && detik < 59 && !sudahTampil.has(kunciLangsung)) {
+            sudahTampil.add(kunciLangsung);
+            batch.push({
+              pesan: `➡️ ${stasiun} ${label} ${namaKereta} <i>langsung</i> ${item.berangkat}`,
+              tipe: "langsung",
+              keterangan: item.keterangan || ""
+            });
+          }
+
+          if (!datangLangsung && berangkatValid && jam === jamB && menit === menitB && detik < 59 && !sudahTampil.has(kunciBerangkat)) {
+            sudahTampil.add(kunciBerangkat);
+            batch.push({
+              pesan: `⬆️ ${stasiun} ${label} ${namaKereta} <i>berangkat</i> ${item.berangkat}`,
+              tipe: "berangkat",
+              keterangan: item.keterangan || ""
+            });
+          }
+        });
+      }
+
+      if (batch.length > 0) {
+        tampilkanBatch(batch);
+      }
+    }
+
+    async function mulai() {
+      try {
+        const res = await fetch("jadwal.json");
+        semuaData = await res.json();
+        tampilkanJam();
+        periksaNotifikasiSegeraSaatMuat();
+
+        setInterval(() => {
+          tampilkanJam();
+          prosesNotifikasiSaatIni();
+        }, 1000);
+      } catch (err) {
+        console.error("Gagal memuat jadwal:", err);
+      }
+    }
+
+    mulai();
+  </script>
+</body>
+</html>
